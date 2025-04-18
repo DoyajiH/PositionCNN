@@ -1,91 +1,100 @@
-# Python packages
-from termcolor import colored
-from tqdm import tqdm
-import os
-import tarfile
-import wget
-
-# PyTorch & Pytorch Lightning
-from lightning.pytorch import LightningDataModule
-from torch.utils.data import DataLoader
+import numpy as np
+from PIL import Image
+import torch
+from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
-from torchvision.datasets import ImageFolder
-
-# Custom packages
 import src.config as cfg
+from lightning.pytorch import LightningDataModule
 
+class ParkingDataset(Dataset):
+    def __init__(self, images: np.ndarray, labels: np.ndarray, transform=None):
+        assert len(images) == len(labels), "images/labels 길이 불일치"
+        self.images    = images
+        self.labels    = labels
+        self.transform = transform
 
-class TinyImageNetDatasetModule(LightningDataModule):
-    __DATASET_NAME__ = 'tiny-imagenet-200'
+    def __len__(self):
+        # 전체 샘플 개수
+        return len(self.labels)
 
-    def __init__(self, batch_size: int = cfg.BATCH_SIZE):
+    def __getitem__(self, idx):
+        # 1) NumPy 배열 → PIL.Image
+        img = Image.fromarray(self.images[idx].astype('uint8'))
+        # 2) transform 적용 (크기 조정 → Tensor → 정규화)
+        if self.transform:
+            img = self.transform(img)
+        # 3) 레이블 → FloatTensor([x, y, psi])
+        lbl = torch.tensor(self.labels[idx], dtype=torch.float32)
+        return img, lbl
+
+class ParkingDataModule(LightningDataModule):
+    def __init__(self,
+                 train_images_path: str,
+                 train_labels_path: str,
+                 val_images_path: str,
+                 val_labels_path: str,
+                 test_images_path: str,
+                 test_labels_path: str,
+                 batch_size: int = cfg.BATCH_SIZE,
+                 num_workers: int = cfg.NUM_WORKERS):
         super().__init__()
-        self.batch_size = batch_size
+        # 파일 경로 저장
+        self.train_images_path = train_images_path
+        self.train_labels_path = train_labels_path
+        self.val_images_path   = val_images_path
+        self.val_labels_path   = val_labels_path
+        self.test_images_path  = test_images_path
+        self.test_labels_path  = test_labels_path
 
-    def prepare_data(self):
-        '''called only once and on 1 GPU'''
-        if not os.path.exists(os.path.join(cfg.DATASET_ROOT_PATH, self.__DATASET_NAME__)):
-            # download data
-            print(colored("\nDownloading dataset...", color='green', attrs=('bold',)))
-            filename = self.__DATASET_NAME__ + '.tar'
-            wget.download(f'https://hyu-aue8088.s3.ap-northeast-2.amazonaws.com/{filename}')
+        # config에서 DataLoader 파라미터
+        self.batch_size  = batch_size
+        self.num_workers = num_workers
 
-            # extract data
-            print(colored("\nExtract dataset...", color='green', attrs=('bold',)))
-            with tarfile.open(name=filename) as tar:
-                # Go over each member
-                for member in tqdm(iterable=tar.getmembers(), total=len(tar.getmembers())):
-                    # Extract member
-                    tar.extract(path=cfg.DATASET_ROOT_PATH, member=member)
-            os.remove(filename)
+        # config에서 전처리 파라미터
+        self.transform = transforms.Compose([
+            transforms.Resize((cfg.IMG_HEIGHT, cfg.IMG_WIDTH)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=cfg.IMAGE_MEAN,
+                                 std=cfg.IMAGE_STD),
+        ])
+
+    def setup(self, stage=None):
+        # ── fit 단계(train+val) ───────────────────
+        if stage in (None, 'fit'):
+            train_imgs = np.load(self.train_images_path)
+            train_lbls = np.load(self.train_labels_path)
+            val_imgs   = np.load(self.val_images_path)
+            val_lbls   = np.load(self.val_labels_path)
+
+            self.train_ds = ParkingDataset(train_imgs, train_lbls,
+                                           transform=self.transform)
+            self.val_ds   = ParkingDataset(val_imgs,   val_lbls,
+                                           transform=self.transform)
+
+        # ── test 단계 ───────────────────
+        if stage in (None, 'test'):
+            test_imgs = np.load(self.test_images_path)
+            test_lbls = np.load(self.test_labels_path)
+            self.test_ds = ParkingDataset(test_imgs, test_lbls,
+                                          transform=self.transform)
 
     def train_dataloader(self):
-        tf_train = transforms.Compose([
-            transforms.RandomRotation(cfg.IMAGE_ROTATION),
-            transforms.RandomHorizontalFlip(cfg.IMAGE_FLIP_PROB),
-            transforms.RandomCrop(cfg.IMAGE_NUM_CROPS, padding=cfg.IMAGE_PAD_CROPS),
-            transforms.ToTensor(),
-            transforms.Normalize(cfg.IMAGE_MEAN, cfg.IMAGE_STD),
-        ])
-        dataset = ImageFolder(os.path.join(cfg.DATASET_ROOT_PATH, self.__DATASET_NAME__, 'train'), tf_train)
-        msg = f"[Train]\t root dir: {dataset.root}\t | # of samples: {len(dataset):,}"
-        print(colored(msg, color='blue', attrs=('bold',)))
-
-        return DataLoader(
-            dataset,
-            shuffle=True,
-            pin_memory=True,
-            num_workers=cfg.NUM_WORKERS,
-            batch_size=self.batch_size,
-        )
+        return DataLoader(self.train_ds,
+                          batch_size=self.batch_size,
+                          shuffle=True,
+                          num_workers=self.num_workers,
+                          pin_memory=True)
 
     def val_dataloader(self):
-        tf_val = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(cfg.IMAGE_MEAN, cfg.IMAGE_STD),
-        ])
-        dataset = ImageFolder(os.path.join(cfg.DATASET_ROOT_PATH, self.__DATASET_NAME__, 'val'), tf_val)
-        msg = f"[Val]\t root dir: {dataset.root}\t | # of samples: {len(dataset):,}"
-        print(colored(msg, color='blue', attrs=('bold',)))
-
-        return DataLoader(
-            dataset,
-            pin_memory=True,
-            num_workers=cfg.NUM_WORKERS,
-            batch_size=self.batch_size,
-        )
+        return DataLoader(self.val_ds,
+                          batch_size=self.batch_size,
+                          shuffle=False,
+                          num_workers=self.num_workers,
+                          pin_memory=True)
 
     def test_dataloader(self):
-        tf_test = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(cfg.IMAGE_MEAN, cfg.IMAGE_STD),
-        ])
-        dataset = ImageFolder(os.path.join(cfg.DATASET_ROOT_PATH, self.__DATASET_NAME__, 'test'), tf_test)
-        msg = f"[Test]\t root dir: {dataset.root}\t | # of samples: {len(dataset):,}"
-        print(colored(msg, color='blue', attrs=('bold',)))
-
-        return DataLoader(
-            dataset,
-            num_workers=cfg.NUM_WORKERS,
-            batch_size=self.batch_size,
-        )
+        return DataLoader(self.test_ds,
+                          batch_size=self.batch_size,
+                          shuffle=False,
+                          num_workers=self.num_workers,
+                          pin_memory=True)

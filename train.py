@@ -10,8 +10,8 @@ from lightning import Trainer
 import torch
 
 # Custom packages
-from src.dataset import TinyImageNetDatasetModule
-from src.network import SimpleClassifier
+from src.dataset import ParkingDataModule
+from src.network import ParkingPoseRegressor
 import src.config as cfg
 
 torch.set_float32_matmul_precision('medium')
@@ -19,15 +19,19 @@ torch.set_float32_matmul_precision('medium')
 
 if __name__ == "__main__":
 
-    model = SimpleClassifier(
-        model_name = cfg.MODEL_NAME,
-        num_classes = cfg.NUM_CLASSES,
+    model = ParkingPoseRegressor(
+        model_name       = cfg.MODEL_NAME,
         optimizer_params = cfg.OPTIMIZER_PARAMS,
         scheduler_params = cfg.SCHEDULER_PARAMS,
     )
 
-    datamodule = TinyImageNetDatasetModule(
-        batch_size = cfg.BATCH_SIZE,
+    datamodule = ParkingDataModule(
+        train_images_path=cfg.TRAIN_IMAGES_PATH,
+        train_labels_path=cfg.TRAIN_LABELS_PATH,
+        val_images_path=  cfg.VAL_IMAGES_PATH,
+        val_labels_path=  cfg.VAL_LABELS_PATH,
+        test_images_path= cfg.TEST_IMAGES_PATH,
+        test_labels_path= cfg.TEST_LABELS_PATH,
     )
 
     wandb_logger = WandbLogger(
@@ -46,7 +50,7 @@ if __name__ == "__main__":
         logger = wandb_logger,
         callbacks = [
             LearningRateMonitor(logging_interval='epoch'),
-            ModelCheckpoint(save_top_k=1, monitor='accuracy/val', mode='max'),
+            ModelCheckpoint(save_top_k=1, monitor='loss/val', mode='min'),
         ],
     )
 

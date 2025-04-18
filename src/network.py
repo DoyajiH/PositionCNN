@@ -1,111 +1,87 @@
-# Python packages
-from termcolor import colored
-from typing import Dict
-import copy
+# src/network.py
 
-# PyTorch & Pytorch Lightning
-from lightning.pytorch import LightningModule
-from lightning.pytorch.loggers.wandb import WandbLogger
+import copy
+import torch
 from torch import nn
 from torchvision import models
-from torchvision.models.alexnet import AlexNet
-import torch
 
-# Custom packages
-from src.metric import MyAccuracy
+from lightning.pytorch import LightningModule
+
 import src.config as cfg
 from src.util import show_setting
 
+class ParkingPoseRegressor(LightningModule):
+    """
+    후방 카메라 이미지를 입력받아 차량의 위치 (x, y, psi)를 회귀 예측하는 모델
+    """
 
-# [TODO: Optional] Rewrite this class if you want
-class MyNetwork(AlexNet):
-    def __init__(self):
-        super().__init__()
-
-        # [TODO] Modify feature extractor part in AlexNet
-
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # [TODO: Optional] Modify this as well if you want
-        x = self.features(x)
-        x = self.avgpool(x)
-        x = torch.flatten(x, 1)
-        x = self.classifier(x)
-        return x
-
-
-class SimpleClassifier(LightningModule):
     def __init__(self,
-                 model_name: str = 'resnet18',
-                 num_classes: int = 200,
-                 optimizer_params: Dict = dict(),
-                 scheduler_params: Dict = dict(),
-        ):
+                 model_name: str = cfg.MODEL_NAME,
+                 optimizer_params: dict = cfg.OPTIMIZER_PARAMS,
+                 scheduler_params: dict = cfg.SCHEDULER_PARAMS):
         super().__init__()
+        # 1) 백본 모델 로드 (사전 학습된 가중치 없이 새로 학습)
+        backbone = models.get_model(model_name, weights=None)
 
-        # Network
-        if model_name == 'MyNetwork':
-            self.model = MyNetwork()
-        else:
-            models_list = models.list_models()
-            assert model_name in models_list, f'Unknown model name: {model_name}. Choose one from {", ".join(models_list)}'
-            self.model = models.get_model(model_name, num_classes=num_classes)
+        # 2) 마지막 FC 레이어를 회귀용 3개 출력으로 교체
+        in_features = backbone.fc.in_features
+        backbone.fc = nn.Linear(in_features, 3)
+        self.model = backbone
 
-        # Loss function
-        self.loss_fn = nn.CrossEntropyLoss()
+        # 3) 손실 함수 및 평가 지표 설정
+        self.loss_fn = nn.MSELoss()
 
-        # Metric
-        self.accuracy = MyAccuracy()
-
-        # Hyperparameters
+        # 4) 하이퍼파라미터(optim, scheduler) 저장
         self.save_hyperparameters()
 
     def on_train_start(self):
+        # 학습 시작 시 config 값 출력
         show_setting(cfg)
 
     def configure_optimizers(self):
+        # Optimizer 설정
         optim_params = copy.deepcopy(self.hparams.optimizer_params)
-        optim_type = optim_params.pop('type')
-        optimizer = getattr(torch.optim, optim_type)(self.parameters(), **optim_params)
+        optim_type   = optim_params.pop('type')
+        optimizer    = getattr(torch.optim, optim_type)(
+            self.parameters(), **optim_params
+        )
 
-        scheduler_params = copy.deepcopy(self.hparams.scheduler_params)
-        scheduler_type = scheduler_params.pop('type')
-        scheduler = getattr(torch.optim.lr_scheduler, scheduler_type)(optimizer, **scheduler_params)
-        return {'optimizer': optimizer, 'lr_scheduler': scheduler}
+        # Scheduler 설정
+        sched_params = copy.deepcopy(self.hparams.scheduler_params)
+        sched_type   = sched_params.pop('type')
+        scheduler    = getattr(torch.optim.lr_scheduler, sched_type)(
+            optimizer, **sched_params
+        )
 
-    def forward(self, x):
+        return {
+            'optimizer': optimizer,
+            'lr_scheduler': {
+                'scheduler': scheduler,
+                'monitor':   'loss/val',  # validation loss 모니터링
+            }
+        }
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # 순전파: (B, 3) 크기의 텐서 반환 (x, y, psi)
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
-        loss, scores, y = self._common_step(batch)
-        accuracy = self.accuracy(scores, y)
-        self.log_dict({'loss/train': loss, 'accuracy/train': accuracy},
-                      on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        x, y   = batch
+        preds  = self(x)
+        loss   = self.loss_fn(preds, y)
+        self.log('loss/train', loss, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        loss, scores, y = self._common_step(batch)
-        accuracy = self.accuracy(scores, y)
-        self.log_dict({'loss/val': loss, 'accuracy/val': accuracy},
-                      on_step=False, on_epoch=True, prog_bar=True, logger=True)
-        self._wandb_log_image(batch, batch_idx, scores, frequency = cfg.WANDB_IMG_LOG_FREQ)
+        x, y   = batch
+        preds  = self(x)
+        loss   = self.loss_fn(preds, y)
+        self.log('loss/val', loss, on_epoch=True, prog_bar=True)
+        return {'val_loss': loss}
 
-    def _common_step(self, batch):
-        x, y = batch
-        scores = self.forward(x)
-        loss = self.loss_fn(scores, y)
-        return loss, scores, y
-
-    def _wandb_log_image(self, batch, batch_idx, preds, frequency = 100):
-        if not isinstance(self.logger, WandbLogger):
-            if batch_idx == 0:
-                self.print(colored("Please use WandbLogger to log images.", color='blue', attrs=('bold',)))
-            return
-
-        if batch_idx % frequency == 0:
-            x, y = batch
-            preds = torch.argmax(preds, dim=1)
-            self.logger.log_image(
-                key=f'pred/val/batch{batch_idx:5d}_sample_0',
-                images=[x[0].to('cpu')],
-                caption=[f'GT: {y[0].item()}, Pred: {preds[0].item()}'])
+    def test_step(self, batch, batch_idx):
+        x, y   = batch
+        preds  = self(x)
+        loss   = self.loss_fn(preds, y)
+        self.log('loss/test', loss, on_epoch=True, prog_bar=True)
+        return {'test_loss': loss}
