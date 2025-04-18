@@ -3,14 +3,14 @@ import os
 # Data file Paths
 BASE_DATA_DIR = os.path.join(os.getcwd(), "dataset")
 
-TRAIN_IMAGES_PATH = os.path.join(BASE_DATA_DIR, "train", "images.npy")
-TRAIN_LABELS_PATH = os.path.join(BASE_DATA_DIR, "train", "labels.npy")
+TRAIN_IMAGES_PATH = os.path.join(BASE_DATA_DIR, "train", "vehicle_images.npy")
+TRAIN_LABELS_PATH = os.path.join(BASE_DATA_DIR, "train", "vehicle_labels.npy")
 
-VAL_IMAGES_PATH   = os.path.join(BASE_DATA_DIR, "val",   "images.npy")
-VAL_LABELS_PATH   = os.path.join(BASE_DATA_DIR, "val",   "labels.npy")
+VAL_IMAGES_PATH   = os.path.join(BASE_DATA_DIR, "val",   "vehicle_images.npy")
+VAL_LABELS_PATH   = os.path.join(BASE_DATA_DIR, "val",   "vehicle_labels.npy")
 
-TEST_IMAGES_PATH  = os.path.join(BASE_DATA_DIR, "test",  "images.npy")
-TEST_LABELS_PATH  = os.path.join(BASE_DATA_DIR, "test",  "labels.npy")
+TEST_IMAGES_PATH  = os.path.join(BASE_DATA_DIR, "test",  "vehicle_images.npy")
+TEST_LABELS_PATH  = os.path.join(BASE_DATA_DIR, "test",  "vehicle_labels.npy")
 
 # Training Hyperparameters
 BATCH_SIZE          = 512
