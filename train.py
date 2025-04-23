@@ -1,6 +1,6 @@
 """
     [AUE8088] PA1: Image Classification
-        - To run: (aue8088) $ python train.py
+        - To run: (PositionCNN) $ python train.py
         - For better flexibility, consider using LightningCLI in PyTorch Lightning
 """
 # PyTorch & Pytorch Lightning
@@ -39,6 +39,7 @@ if __name__ == "__main__":
         save_dir = cfg.WANDB_SAVE_DIR,
         entity = cfg.WANDB_ENTITY,
         name = cfg.WANDB_NAME,
+        group = cfg.WANDB_NAME,
     )
 
     trainer = Trainer(

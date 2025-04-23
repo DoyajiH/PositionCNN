@@ -1,7 +1,7 @@
 import os
 
 # Data file Paths
-BASE_DATA_DIR = os.path.join(os.getcwd(), "dataset")
+BASE_DATA_DIR = os.path.join(os.getcwd(), "datasets")
 
 TRAIN_IMAGES_PATH = os.path.join(BASE_DATA_DIR, "train", "vehicle_images.npy")
 TRAIN_LABELS_PATH = os.path.join(BASE_DATA_DIR, "train", "vehicle_labels.npy")
@@ -13,18 +13,18 @@ TEST_IMAGES_PATH  = os.path.join(BASE_DATA_DIR, "test",  "vehicle_images.npy")
 TEST_LABELS_PATH  = os.path.join(BASE_DATA_DIR, "test",  "vehicle_labels.npy")
 
 # Training Hyperparameters
-BATCH_SIZE          = 512
+BATCH_SIZE          = 256
 VAL_EVERY_N_EPOCH   = 1
 
 NUM_EPOCHS          = 40
-OPTIMIZER_PARAMS    = {'type': 'SGD', 'lr': 0.005, 'momentum': 0.9}
+OPTIMIZER_PARAMS    = {'type': 'Adam', 'lr': 0.001, 'weight_decay': 0.0001}
 SCHEDULER_PARAMS    = {'type': 'MultiStepLR', 'milestones': [30, 35], 'gamma': 0.2}
 
 # Dataaset
 IMG_HEIGHT = 240
 IMG_WIDTH = 320
 DATASET_ROOT_PATH   = 'datasets/'
-NUM_WORKERS         = 8
+NUM_WORKERS         = 0
 
 # Augmentation
 IMAGE_ROTATION      = 20
@@ -43,7 +43,7 @@ DEVICES             = [0]
 PRECISION_STR       = '32-true'
 
 # Logging
-WANDB_PROJECT       = 'aue8088-pa1'
+WANDB_PROJECT       = 'PositionCNN'
 WANDB_ENTITY        = os.environ.get('WANDB_ENTITY')
 WANDB_SAVE_DIR      = 'wandb/'
 WANDB_IMG_LOG_FREQ  = 50

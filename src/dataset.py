@@ -18,12 +18,19 @@ class ParkingDataset(Dataset):
         return len(self.labels)
 
     def __getitem__(self, idx):
-        # 1) NumPy 배열 → PIL.Image
-        img = Image.fromarray(self.images[idx].astype('uint8'))
-        # 2) transform 적용 (크기 조정 → Tensor → 정규화)
-        if self.transform:
-            img = self.transform(img)
-        # 3) 레이블 → FloatTensor([x, y, psi])
+        arr = self.images[idx]            # e.g. shape (3, 240, 320)
+
+        # 1) 채널이 맨 앞(C, H, W)에 있을 경우 → (H, W, C)로 변환
+        if arr.ndim == 3 and arr.shape[0] in (1, 3):
+            arr = np.transpose(arr, (1, 2, 0))
+
+        # 2) 이제 arr.shape == (H, W, C) 이므로 바로 PIL로
+        pil_img = Image.fromarray(arr.astype('uint8'))
+
+        # 3) transform 적용
+        img = self.transform(pil_img) if self.transform else pil_img
+
+        # 4) 레이블
         lbl = torch.tensor(self.labels[idx], dtype=torch.float32)
         return img, lbl
 
@@ -61,9 +68,9 @@ class ParkingDataModule(LightningDataModule):
     def setup(self, stage=None):
         # ── fit 단계(train+val) ───────────────────
         if stage in (None, 'fit'):
-            train_imgs = np.load(self.train_images_path)
+            train_imgs = np.load(self.train_images_path, mmap_mode='r')
             train_lbls = np.load(self.train_labels_path)
-            val_imgs   = np.load(self.val_images_path)
+            val_imgs   = np.load(self.val_images_path, mmap_mode='r')
             val_lbls   = np.load(self.val_labels_path)
 
             self.train_ds = ParkingDataset(train_imgs, train_lbls,
@@ -73,7 +80,7 @@ class ParkingDataModule(LightningDataModule):
 
         # ── test 단계 ───────────────────
         if stage in (None, 'test'):
-            test_imgs = np.load(self.test_images_path)
+            test_imgs = np.load(self.test_images_path, mmap_mode='r')
             test_lbls = np.load(self.test_labels_path)
             self.test_ds = ParkingDataset(test_imgs, test_lbls,
                                           transform=self.transform)
@@ -96,5 +103,4 @@ class ParkingDataModule(LightningDataModule):
         return DataLoader(self.test_ds,
                           batch_size=self.batch_size,
                           shuffle=False,
-                          num_workers=self.num_workers,
-                          pin_memory=True)
+                          num_workers=self.num_workers)

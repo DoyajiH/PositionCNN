@@ -1,6 +1,6 @@
 """
-    [AUE8088] PA1: Image Classification
-        - To run: (aue8088) $ python test.py --ckpt_file wandb/aue8088-pa1/ygeiua2t/checkpoints/epoch\=19-step\=62500.ckpt
+    [PositionCNN] Parking Position
+        - To run: (PositionCNN) $ python test.py --ckpt_file wandb/PositionCNN/ygeiua2t/checkpoints/epoch=19-step=62500.ckpt
 """
 # Python packages
 import argparse
@@ -17,7 +17,6 @@ from src.network import ParkingPoseRegressor
 import src.config as cfg
 
 torch.set_float32_matmul_precision('medium')
-
 
 if __name__ == "__main__":
     args = argparse.ArgumentParser()
@@ -37,26 +36,27 @@ if __name__ == "__main__":
         val_labels_path=  cfg.VAL_LABELS_PATH,
         test_images_path= cfg.TEST_IMAGES_PATH,
         test_labels_path= cfg.TEST_LABELS_PATH,
-        batch_size = 1,
+        batch_size = cfg.BATCH_SIZE,
     )
 
     wandb_logger = WandbLogger(
         project = cfg.WANDB_PROJECT,
         save_dir = cfg.WANDB_SAVE_DIR,
         entity = cfg.WANDB_ENTITY,
-        name = cfg.WANDB_NAME,
+        name = f"(test){cfg.WANDB_NAME}",
+        group = cfg.WANDB_NAME,
     )
 
     trainer = Trainer(
-        accelerator = cfg.ACCELERATOR,
-        devices = cfg.DEVICES,
-        precision = cfg.PRECISION_STR,
-        benchmark = True,
+        accelerator = 'cpu',
+        devices = 1,
+        precision = 32,
+        benchmark = False,
         inference_mode = True,
         logger = wandb_logger,
     )
 
-    trainer.validate(model, ckpt_path = args.ckpt_file, datamodule = datamodule)
+    trainer.test(model, ckpt_path = args.ckpt_file, datamodule = datamodule)
 
     # FLOP counter
     x, y = next(iter(datamodule.test_dataloader()))
